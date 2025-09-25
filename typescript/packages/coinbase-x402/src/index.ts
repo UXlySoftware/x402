@@ -5,14 +5,15 @@ import { CreateHeaders } from "x402/verify";
 const COINBASE_FACILITATOR_BASE_URL = "https://api.cdp.coinbase.com";
 const COINBASE_FACILITATOR_V2_ROUTE = "/platform/v2/x402";
 
-const X402_SDK_VERSION = "0.4.1";
-const CDP_SDK_VERSION = "1.1.1";
+const X402_SDK_VERSION = "0.6.5";
+const CDP_SDK_VERSION = "1.29.0";
 
 /**
  * Creates an authorization header for a request to the Coinbase API.
  *
  * @param apiKeyId - The api key ID
  * @param apiKeySecret - The api key secret
+ * @param requestMethod - The method for the request (e.g. 'POST')
  * @param requestHost - The host for the request (e.g. 'https://x402.org/facilitator')
  * @param requestPath - The path for the request (e.g. '/verify')
  * @returns The authorization header string
@@ -20,13 +21,14 @@ const CDP_SDK_VERSION = "1.1.1";
 export async function createAuthHeader(
   apiKeyId: string,
   apiKeySecret: string,
+  requestMethod: string,
   requestHost: string,
   requestPath: string,
 ) {
   const jwt = await generateJwt({
     apiKeyId,
     apiKeySecret,
-    requestMethod: "POST",
+    requestMethod,
     requestHost,
     requestPath,
   });
@@ -64,32 +66,46 @@ export function createCdpAuthHeaders(apiKeyId?: string, apiKeySecret?: string): 
     apiKeyId = apiKeyId ?? process.env.CDP_API_KEY_ID;
     apiKeySecret = apiKeySecret ?? process.env.CDP_API_KEY_SECRET;
 
-    if (!apiKeyId || !apiKeySecret) {
-      throw new Error(
-        "Missing environment variables: CDP_API_KEY_ID and CDP_API_KEY_SECRET must be set when using default facilitator",
-      );
-    }
-
-    return {
+    const headers = {
       verify: {
-        Authorization: await createAuthHeader(
-          apiKeyId,
-          apiKeySecret,
-          requestHost,
-          `${COINBASE_FACILITATOR_V2_ROUTE}/verify`,
-        ),
         "Correlation-Context": createCorrelationHeader(),
-      },
+      } as Record<string, string>,
       settle: {
-        Authorization: await createAuthHeader(
-          apiKeyId,
-          apiKeySecret,
-          requestHost,
-          `${COINBASE_FACILITATOR_V2_ROUTE}/settle`,
-        ),
+        "Correlation-Context": createCorrelationHeader(),
+      } as Record<string, string>,
+      supported: {
+        "Correlation-Context": createCorrelationHeader(),
+      } as Record<string, string>,
+      list: {
         "Correlation-Context": createCorrelationHeader(),
       },
     };
+
+    if (apiKeyId && apiKeySecret) {
+      headers.verify.Authorization = await createAuthHeader(
+        apiKeyId,
+        apiKeySecret,
+        "POST",
+        requestHost,
+        `${COINBASE_FACILITATOR_V2_ROUTE}/verify`,
+      );
+      headers.settle.Authorization = await createAuthHeader(
+        apiKeyId,
+        apiKeySecret,
+        "POST",
+        requestHost,
+        `${COINBASE_FACILITATOR_V2_ROUTE}/settle`,
+      );
+      headers.supported.Authorization = await createAuthHeader(
+        apiKeyId,
+        apiKeySecret,
+        "GET",
+        requestHost,
+        `${COINBASE_FACILITATOR_V2_ROUTE}/supported`,
+      );
+    }
+
+    return headers;
   };
 }
 

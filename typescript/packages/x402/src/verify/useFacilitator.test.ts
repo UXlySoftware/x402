@@ -170,4 +170,107 @@ describe("useFacilitator", () => {
       );
     });
   });
+
+  describe("supported", () => {
+    it("should call fetch with the correct default URL", async () => {
+      const { supported } = useFacilitator();
+      await supported();
+
+      expect(fetch).toHaveBeenCalledWith("https://x402.org/facilitator/supported", {
+        headers: { "Content-Type": "application/json" },
+        method: "GET",
+      });
+    });
+
+    it("should call fetch with the correct custom URL", async () => {
+      const { supported } = useFacilitator({ url: "https://custom-facilitator.org" });
+      await supported();
+
+      expect(fetch).toHaveBeenCalledWith("https://custom-facilitator.org/supported", {
+        headers: { "Content-Type": "application/json" },
+        method: "GET",
+      });
+    });
+
+    it("should throw error on non-200 response", async () => {
+      (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+        status: 500,
+        statusText: "Internal Server Error",
+      });
+
+      const { supported } = useFacilitator();
+
+      await expect(supported()).rejects.toThrow(
+        "Failed to get supported payment kinds: Internal Server Error",
+      );
+    });
+  });
+
+  describe("list", () => {
+    it("should call fetch with the correct URL and method", async () => {
+      const { list } = useFacilitator();
+      await list();
+
+      expect(fetch).toHaveBeenCalledWith("https://x402.org/facilitator/discovery/resources?", {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    it("should use custom URL when provided", async () => {
+      const customUrl = "https://custom-facilitator.org";
+      const { list } = useFacilitator({ url: customUrl });
+      await list();
+
+      expect(fetch).toHaveBeenCalledWith(`${customUrl}/discovery/resources?`, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    it("should properly encode query parameters", async () => {
+      const { list } = useFacilitator();
+      const config = {
+        type: "test-type",
+        limit: 10,
+        offset: 20,
+      };
+      await list(config);
+
+      const expectedUrl =
+        "https://x402.org/facilitator/discovery/resources?type=test-type&limit=10&offset=20";
+      expect(fetch).toHaveBeenCalledWith(expectedUrl, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    it("should filter out undefined query parameters", async () => {
+      const { list } = useFacilitator();
+      const config = {
+        type: "test-type",
+        limit: 10,
+        offset: undefined,
+      };
+      await list(config);
+
+      const expectedUrl =
+        "https://x402.org/facilitator/discovery/resources?type=test-type&limit=10";
+      expect(fetch).toHaveBeenCalledWith(expectedUrl, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    it("should throw error on non-200 response", async () => {
+      global.fetch = vi.fn().mockResolvedValue({
+        status: 400,
+        statusText: "Bad Request",
+        json: async () => ({}),
+      });
+      const { list } = useFacilitator();
+
+      await expect(list()).rejects.toThrow("Failed to list discovery: 400 Bad Request");
+    });
+  });
 });

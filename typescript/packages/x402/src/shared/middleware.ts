@@ -8,10 +8,11 @@ import {
   ERC20TokenAmount,
   PaymentRequirements,
   PaymentPayload,
+  SPLTokenAmount,
 } from "../types";
 import { RoutesConfig } from "../types";
 import { safeBase64Decode } from "./base64";
-import { getUsdcAddressForChain } from "./evm";
+import { getUsdcChainConfigForChain } from "./evm";
 import { getNetworkId } from "./network";
 
 /**
@@ -39,10 +40,15 @@ export function computeRoutePatterns(routes: RoutesConfig): RoutePattern[] {
     return {
       verb: verb.toUpperCase(),
       pattern: new RegExp(
-        `^${path
-          .replace(/\*/g, ".*?") // Make wildcard non-greedy and optional
-          .replace(/\[([^\]]+)\]/g, "[^/]+")
-          .replace(/\//g, "\\/")}$`,
+        `^${
+          path
+            // First escape all special regex characters except * and []
+            .replace(/[$()+.?^{|}]/g, "\\$&")
+            // Then handle our special pattern characters
+            .replace(/\*/g, ".*?") // Make wildcard non-greedy and optional
+            .replace(/\[([^\]]+)\]/g, "[^/]+") // Convert [param] to regex capture
+            .replace(/\//g, "\\/") // Escape slashes
+        }$`,
         "i",
       ),
       config: routeConfig,
@@ -63,11 +69,38 @@ export function findMatchingRoute(
   path: string,
   method: string,
 ): RoutePattern | undefined {
+  // Normalize the path:
+  // 1. Remove query parameters and hash fragments
+  // 2. Replace backslashes with forward slashes
+  // 3. Replace multiple consecutive slashes with a single slash
+  // 4. Keep trailing slash if path is not root
+  let normalizedPath: string;
+  try {
+    // First split off query parameters and hash fragments
+    const pathWithoutQuery = path.split(/[?#]/)[0];
+
+    // Then decode the path - this needs to happen before any normalization
+    // so encoded characters are properly handled
+    const decodedPath = decodeURIComponent(pathWithoutQuery);
+
+    // Normalize the path (just clean up slashes)
+    normalizedPath = decodedPath
+      .replace(/\\/g, "/") // replace backslashes
+      .replace(/\/+/g, "/") // collapse slashes
+      .replace(/(.+?)\/+$/, "$1"); // trim trailing slashes
+  } catch {
+    // If decoding fails (e.g., invalid % encoding), return undefined
+    return undefined;
+  }
+
   // Find matching route pattern
   const matchingRoutes = routePatterns.filter(({ pattern, verb }) => {
-    const matchesPath = pattern.test(path);
-    const matchesVerb = verb === "*" || verb === method.toUpperCase();
-    return matchesPath && matchesVerb;
+    const matchesPath = pattern.test(normalizedPath);
+    const upperMethod = method.toUpperCase();
+    const matchesVerb = verb === "*" || upperMethod === verb;
+
+    const result = matchesPath && matchesVerb;
+    return result;
   });
 
   if (matchingRoutes.length === 0) {
@@ -89,11 +122,16 @@ export function findMatchingRoute(
  * @returns The default asset
  */
 export function getDefaultAsset(network: Network) {
+  const chainId = getNetworkId(network);
+  const usdc = getUsdcChainConfigForChain(chainId);
+  if (!usdc) {
+    throw new Error(`Unable to get default asset on ${network}`);
+  }
   return {
-    address: getUsdcAddressForChain(getNetworkId(network)),
+    address: usdc.usdcAddress,
     decimals: 6,
     eip712: {
-      name: network === "base" ? "USD Coin" : network === "iotex" ? "Bridged USDC" : "USDC",
+      name: usdc.usdcName,
       version: "2",
     },
   };
@@ -109,10 +147,12 @@ export function getDefaultAsset(network: Network) {
 export function processPriceToAtomicAmount(
   price: Price,
   network: Network,
-): { maxAmountRequired: string; asset: ERC20TokenAmount["asset"] } | { error: string } {
+):
+  | { maxAmountRequired: string; asset: ERC20TokenAmount["asset"] | SPLTokenAmount["asset"] }
+  | { error: string } {
   // Handle USDC amount (string) or token amount (ERC20TokenAmount)
   let maxAmountRequired: string;
-  let asset: ERC20TokenAmount["asset"];
+  let asset: ERC20TokenAmount["asset"] | SPLTokenAmount["asset"];
 
   if (typeof price === "string" || typeof price === "number") {
     // USDC amount in dollars

@@ -1,11 +1,55 @@
 from __future__ import annotations
 
-from typing import Any, Optional, Union
+from datetime import datetime
+from enum import Enum
+from typing import Any, Optional, Union, Dict, Literal, List
+from typing_extensions import (
+    TypedDict,
+)  # use `typing_extensions.TypedDict` instead of `typing.TypedDict` on Python < 3.12
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
 
 from x402.networks import SupportedNetworks
+
+
+# Add HTTP request structure types
+class HTTPVerbs(str, Enum):
+    GET = "GET"
+    POST = "POST"
+    PUT = "PUT"
+    DELETE = "DELETE"
+    PATCH = "PATCH"
+    OPTIONS = "OPTIONS"
+    HEAD = "HEAD"
+
+
+class HTTPInputSchema(BaseModel):
+    """Schema for HTTP request input, excluding spec and method which are handled by the middleware"""
+
+    query_params: Optional[Dict[str, str]] = None
+    body_type: Optional[
+        Literal["json", "form-data", "multipart-form-data", "text", "binary"]
+    ] = None
+    body_fields: Optional[Dict[str, Any]] = None
+    header_fields: Optional[Dict[str, Any]] = None
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        from_attributes=True,
+    )
+
+
+class HTTPRequestStructure(HTTPInputSchema):
+    """Complete HTTP request structure including protocol type and method"""
+
+    type: Literal["http"]
+    method: HTTPVerbs
+
+
+# For now we only support HTTP, but could add MCP and OpenAPI later
+RequestStructure = HTTPRequestStructure
 
 
 class TokenAmount(BaseModel):
@@ -65,7 +109,6 @@ class PaymentRequirements(BaseModel):
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
-        serialize_by_alias=True,
         from_attributes=True,
     )
 
@@ -89,7 +132,6 @@ class x402PaymentRequiredResponse(BaseModel):
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
-        serialize_by_alias=True,
         from_attributes=True,
     )
 
@@ -110,7 +152,6 @@ class EIP3009Authorization(BaseModel):
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
-        serialize_by_alias=True,
         from_attributes=True,
     )
 
@@ -131,7 +172,6 @@ class VerifyResponse(BaseModel):
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
-        serialize_by_alias=True,
         from_attributes=True,
     )
 
@@ -146,7 +186,6 @@ class SettleResponse(BaseModel):
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
-        serialize_by_alias=True,
         from_attributes=True,
     )
 
@@ -164,7 +203,6 @@ class PaymentPayload(BaseModel):
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
-        serialize_by_alias=True,
         from_attributes=True,
     )
 
@@ -175,3 +213,75 @@ class X402Headers(BaseModel):
 
 class UnsupportedSchemeException(Exception):
     pass
+
+
+class PaywallConfig(TypedDict, total=False):
+    """Configuration for paywall UI customization"""
+
+    cdp_client_key: str
+    app_name: str
+    app_logo: str
+    session_token_endpoint: str
+
+
+class DiscoveredResource(BaseModel):
+    """A discovery resource represents a discoverable resource in the X402 ecosystem."""
+
+    resource: str
+    type: str = Field(..., pattern="^http$")  # Currently only supports 'http'
+    x402_version: int = Field(..., alias="x402Version")
+    accepts: List["PaymentRequirements"]
+    last_updated: datetime = Field(
+        ...,
+        alias="lastUpdated",
+        description="ISO 8601 formatted datetime string with UTC timezone (e.g. 2025-08-09T01:07:04.005Z)",
+    )
+    metadata: Optional[dict] = None
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        from_attributes=True,
+    )
+
+
+class ListDiscoveryResourcesRequest(BaseModel):
+    """Request parameters for listing discovery resources."""
+
+    type: Optional[str] = None
+    limit: Optional[int] = None
+    offset: Optional[int] = None
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        from_attributes=True,
+    )
+
+
+class DiscoveryResourcesPagination(BaseModel):
+    """Pagination information for discovery resources responses."""
+
+    limit: int
+    offset: int
+    total: int
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        from_attributes=True,
+    )
+
+
+class ListDiscoveryResourcesResponse(BaseModel):
+    """Response from the discovery resources endpoint."""
+
+    x402_version: int = Field(..., alias="x402Version")
+    items: List[DiscoveredResource]
+    pagination: DiscoveryResourcesPagination
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        from_attributes=True,
+    )

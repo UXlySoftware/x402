@@ -1,6 +1,6 @@
 import base64
 import json
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Union, get_args, cast
 from flask import Flask, request, g
 from x402.path import path_is_match
 from x402.types import (
@@ -8,10 +8,18 @@ from x402.types import (
     PaymentPayload,
     PaymentRequirements,
     x402PaymentRequiredResponse,
+    PaywallConfig,
+    SupportedNetworks,
+    HTTPInputSchema,
 )
-from x402.common import process_price_to_atomic_amount, x402_VERSION
+from x402.common import (
+    process_price_to_atomic_amount,
+    x402_VERSION,
+    find_matching_payment_requirements,
+)
 from x402.encoding import safe_base64_decode
-from x402.facilitator import FacilitatorClient
+from x402.facilitator import FacilitatorClient, FacilitatorConfig
+from x402.paywall import is_browser_request, get_paywall_html
 
 
 class ResponseWrapper:
@@ -56,10 +64,14 @@ class PaymentMiddleware:
         description: str = "",
         mime_type: str = "",
         max_deadline_seconds: int = 60,
-        output_schema: Any = None,
-        facilitator_config: Optional[Dict[str, Any]] = None,
+        input_schema: Optional[HTTPInputSchema] = None,
+        output_schema: Optional[Any] = None,
+        discoverable: Optional[bool] = True,
+        facilitator_config: Optional[FacilitatorConfig] = None,
         network: str = "base-sepolia",
         resource: Optional[str] = None,
+        paywall_config: Optional[PaywallConfig] = None,
+        custom_paywall_html: Optional[str] = None,
     ):
         """
         Add a payment middleware configuration.
@@ -71,10 +83,14 @@ class PaymentMiddleware:
             description (str, optional): Description of the resource
             mime_type (str, optional): MIME type of the resource
             max_deadline_seconds (int, optional): Max time for payment
-            output_schema (Any, optional): JSON schema for response
+            input_schema (Optional[HTTPInputSchema], optional): Schema for the request structure. Defaults to None.
+            output_schema (Optional[Any], optional): Schema for the response. Defaults to None.
+            discoverable (bool, optional): Whether the route is discoverable. Defaults to True.
             facilitator_config (dict, optional): Facilitator config
             network (str, optional): Network ID
             resource (str, optional): Resource URL
+            paywall_config (PaywallConfig, optional): Paywall UI customization config
+            custom_paywall_html (str, optional): Custom HTML to display for paywall instead of default
         """
         config = {
             "price": price,
@@ -83,10 +99,14 @@ class PaymentMiddleware:
             "description": description,
             "mime_type": mime_type,
             "max_deadline_seconds": max_deadline_seconds,
+            "input_schema": input_schema,
             "output_schema": output_schema,
+            "discoverable": discoverable,
             "facilitator_config": facilitator_config,
             "network": network,
             "resource": resource,
+            "paywall_config": paywall_config,
+            "custom_paywall_html": custom_paywall_html,
         }
         self.middleware_configs.append(config)
 
@@ -107,6 +127,13 @@ class PaymentMiddleware:
     def _create_middleware(self, config: Dict[str, Any], next_app):
         """Create a WSGI middleware function for the given configuration."""
 
+        # Validate network is supported
+        supported_networks = get_args(SupportedNetworks)
+        if config["network"] not in supported_networks:
+            raise ValueError(
+                f"Unsupported network: {config['network']}. Must be one of: {supported_networks}"
+            )
+
         # Process price configuration (same as FastAPI)
         try:
             max_amount_required, asset_address, eip712_domain = (
@@ -125,18 +152,19 @@ class PaymentMiddleware:
                     return next_app(environ, start_response)
 
                 # Get resource URL if not explicitly provided
-                resource_url = config["resource"] or request.url
-
-                # Ensure output_schema and extra are objects, not null
-                output_schema_obj = (
-                    {} if config["output_schema"] is None else config["output_schema"]
-                )
+                original_uri = request.headers.get("X-Original-URI")
+                if original_uri:
+                    # Reconstruct the full URL using the original URI from the proxy
+                    resource_url = f"{request.scheme}://{request.host}{original_uri}"
+                else:
+                    # Fallback to request.url if the header is not present
+                    resource_url = config["resource"] or request.url
 
                 # Construct payment details
                 payment_requirements = [
                     PaymentRequirements(
                         scheme="exact",
-                        network=config["network"],
+                        network=cast(SupportedNetworks, config["network"]),
                         asset=asset_address,
                         max_amount_required=max_amount_required,
                         resource=resource_url,
@@ -144,33 +172,58 @@ class PaymentMiddleware:
                         mime_type=config["mime_type"],
                         pay_to=config["pay_to_address"],
                         max_timeout_seconds=config["max_deadline_seconds"],
-                        output_schema=output_schema_obj,
+                        # TODO: Rename output_schema to request_structure
+                        output_schema={
+                            "input": {
+                                "type": "http",
+                                "method": request.method.upper(),
+                                "discoverable": config.get("discoverable", True),
+                                **(
+                                    config["input_schema"].model_dump()
+                                    if config["input_schema"]
+                                    else {}
+                                ),
+                            },
+                            "output": config["output_schema"],
+                        },
                         extra=eip712_domain,
                     )
                 ]
 
                 def x402_response(error: str):
                     """Create a 402 response with payment requirements."""
-                    response_data = x402PaymentRequiredResponse(
-                        x402_version=x402_VERSION,
-                        accepts=payment_requirements,
-                        error=error,
-                    ).model_dump(by_alias=True)
-
+                    request_headers = dict(request.headers)
                     status = "402 Payment Required"
-                    headers = [
-                        ("Content-Type", "application/json"),
-                        ("Content-Length", str(len(json.dumps(response_data)))),
-                    ]
 
-                    start_response(status, headers)
-                    return [json.dumps(response_data).encode("utf-8")]
+                    if is_browser_request(request_headers):
+                        html_content = config[
+                            "custom_paywall_html"
+                        ] or get_paywall_html(
+                            error, payment_requirements, config["paywall_config"]
+                        )
+                        headers = [("Content-Type", "text/html; charset=utf-8")]
+
+                        start_response(status, headers)
+                        return [html_content.encode("utf-8")]
+                    else:
+                        response_data = x402PaymentRequiredResponse(
+                            x402_version=x402_VERSION,
+                            accepts=payment_requirements,
+                            error=error,
+                        ).model_dump(by_alias=True)
+
+                        headers = [
+                            ("Content-Type", "application/json"),
+                            ("Content-Length", str(len(json.dumps(response_data)))),
+                        ]
+
+                        start_response(status, headers)
+                        return [json.dumps(response_data).encode("utf-8")]
 
                 # Check for payment header
                 payment_header = request.headers.get("X-PAYMENT", "")
 
-                if payment_header == "":  # Return JSON response for API requests
-                    # TODO: add support for html paywall
+                if payment_header == "":
                     return x402_response("No X-PAYMENT header provided")
 
                 # Decode payment header
@@ -181,14 +234,8 @@ class PaymentMiddleware:
                     return x402_response(f"Invalid payment header format: {str(e)}")
 
                 # Find matching payment requirements
-                selected_payment_requirements = next(
-                    (
-                        req
-                        for req in payment_requirements
-                        if req.scheme == payment.scheme
-                        and req.network == payment.network
-                    ),
-                    None,
+                selected_payment_requirements = find_matching_payment_requirements(
+                    payment_requirements, payment
                 )
 
                 if not selected_payment_requirements:
@@ -207,9 +254,8 @@ class PaymentMiddleware:
                     loop.close()
 
                 if not verify_response.is_valid:
-                    return x402_response(
-                        "Invalid payment: " + verify_response.invalid_reason
-                    )
+                    error_reason = verify_response.invalid_reason or "Unknown error"
+                    return x402_response(f"Invalid payment: {error_reason}")
 
                 # Store payment details in Flask g object
                 g.payment_details = selected_payment_requirements
@@ -223,7 +269,8 @@ class PaymentMiddleware:
 
                 # Check if response is successful (2xx status code)
                 if (
-                    response_wrapper.status_code >= 200
+                    response_wrapper.status_code is not None
+                    and response_wrapper.status_code >= 200
                     and response_wrapper.status_code < 300
                 ):
                     # Settle the payment for successful responses
@@ -237,7 +284,9 @@ class PaymentMiddleware:
                         if settle_response.success:
                             # Add settlement response header
                             settlement_header = base64.b64encode(
-                                settle_response.model_dump_json().encode("utf-8")
+                                settle_response.model_dump_json(by_alias=True).encode(
+                                    "utf-8"
+                                )
                             ).decode("utf-8")
                             response_wrapper.add_header(
                                 "X-PAYMENT-RESPONSE", settlement_header

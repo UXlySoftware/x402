@@ -10,7 +10,15 @@ import type {
   PublicClient,
   LocalAccount,
 } from "viem";
-import { baseSepolia, avalancheFuji, base } from "viem/chains";
+import {
+  baseSepolia,
+  avalancheFuji,
+  base,
+  sei,
+  seiTestnet,
+  polygon,
+  polygonAmoy,
+} from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { Hex } from "viem";
 
@@ -32,6 +40,8 @@ export type ConnectedClient<
   chain extends Chain | undefined = Chain,
   account extends Account | undefined = undefined,
 > = PublicClient<transport, chain, account>;
+
+export type EvmSigner = SignerWallet<Chain, Transport, Account> | LocalAccount;
 
 /**
  * Creates a public client configured for the specified network
@@ -181,6 +191,14 @@ function getChainFromNetwork(network: string | undefined): Chain {
       return baseSepolia;
     case "avalanche-fuji":
       return avalancheFuji;
+    case "sei":
+      return sei;
+    case "sei-testnet":
+      return seiTestnet;
+    case "polygon":
+      return polygon;
+    case "polygon-amoy":
+      return polygonAmoy;
     default:
       throw new Error(`Unsupported network: ${network}`);
   }
