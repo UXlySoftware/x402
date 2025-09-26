@@ -48,7 +48,7 @@ const facilitator = createFacilitatorConfig("your-1shot-api-key-id", "your-1shot
 ```typescript
 import express from "express";
 import { paymentMiddleware } from "x402-express";
-import { facilitator } from "@coinbase/x402";
+import { facilitator } from "@uxly/x402";
 
 const app = express();
 

@@ -11,7 +11,6 @@ interface TokenResponse {
 }
 
 export function create1ShotAPIAuthHeaders(apiKey?: string, apiSecret?: string): CreateHeaders {
-
   apiKey = apiKey ?? process.env.ONESHOT_KEY;
   apiSecret = apiSecret ?? process.env.ONESHOT_SECRET;
 
@@ -19,18 +18,17 @@ export function create1ShotAPIAuthHeaders(apiKey?: string, apiSecret?: string): 
   let tokenExpiry: Date | null = null;
 
   return async () => {
-
     if (!authToken || !tokenExpiry || tokenExpiry <= new Date()) {
       // 🔄 Token is missing or expired → trigger refresh logic
       const response = await fetch(`${ONESHOT_FACILITATOR_BASE_URL}/token`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
+          "Content-Type": "application/x-www-form-urlencoded",
         },
         body: new URLSearchParams({
-          grant_type: 'client_credentials',
-          client_id: apiKey,
-          client_secret: apiSecret,
+          grant_type: "client_credentials",
+          client_id: apiKey!,
+          client_secret: apiSecret!,
         }),
       });
 
@@ -38,14 +36,14 @@ export function create1ShotAPIAuthHeaders(apiKey?: string, apiSecret?: string): 
         throw new Error(`Failed to get access token: ${response.statusText}`);
       }
 
-      authToken = await response.json() as TokenResponse;
+      authToken = (await response.json()) as TokenResponse;
       tokenExpiry = new Date(Date.now() + authToken!.expires_in * 1000);
     }
 
     const headers = {
       verify: {} as Record<string, string>,
       settle: {} as Record<string, string>,
-      supported: {} as Record<string, string>
+      supported: {} as Record<string, string>,
     };
 
     if (apiKey && apiSecret) {
