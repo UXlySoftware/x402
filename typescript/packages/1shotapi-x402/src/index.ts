@@ -10,16 +10,23 @@ interface TokenResponse {
   expires_in: number;
 }
 
+/**
+ * Creates a 1Shot API auth header for the facilitator service
+ *
+ * @param apiKey - The 1Shot API key
+ * @param apiSecret - The 1Shot API secret
+ * @returns A function that returns the auth headers
+ */
 export function create1ShotAPIAuthHeaders(apiKey?: string, apiSecret?: string): CreateHeaders {
-  apiKey = apiKey ?? process.env.ONESHOT_KEY;
-  apiSecret = apiSecret ?? process.env.ONESHOT_SECRET;
+  apiKey = apiKey ?? process.env.ONESHOT_API_KEY;
+  apiSecret = apiSecret ?? process.env.ONESHOT_API_SECRET;
 
   let authToken: TokenResponse | null = null;
   let tokenExpiry: Date | null = null;
 
   return async () => {
     if (!authToken || !tokenExpiry || tokenExpiry <= new Date()) {
-      // 🔄 Token is missing or expired → trigger refresh logic
+      // Token is missing or expired → trigger refresh logic
       const response = await fetch(`${ONESHOT_FACILITATOR_BASE_URL}/token`, {
         method: "POST",
         headers: {
