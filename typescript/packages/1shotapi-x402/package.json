@@ -1,6 +1,6 @@
 {
-  "name": "@uxly/x402",
-  "version": "0.6.5",
+  "name": "@1shotapi/x402-facilitator",
+  "version": "1.0.1",
   "main": "./dist/cjs/index.js",
   "module": "./dist/esm/index.js",
   "types": "./dist/index.d.ts",
