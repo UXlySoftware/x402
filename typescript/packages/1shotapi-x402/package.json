@@ -15,9 +15,13 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
-  "keywords": [],
+  "keywords": [
+    "1shotapi",
+    "x402",
+    "facilitator"
+  ],
   "license": "Apache-2.0",
-  "author": "UXly Software",
+  "author": "1Shot API",
   "repository": "https://github.com/coinbase/x402",
   "description": "x402 Payment Protocol facilitator package for 1Shot API",
   "devDependencies": {
@@ -56,5 +60,8 @@
   "files": [
     "dist",
     "scripts"
-  ]
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }
