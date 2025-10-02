@@ -1,11 +1,11 @@
-# x402
+# @1shotapi/x402
 
-Core TypeScript implementation of the x402 Payment Protocol. This package provides the foundational types, schemas, and utilities that power all x402 integrations.
+This is forked version of the core TypeScript implementation of the x402 Payment Protocol. This package provides the foundational types, schemas, and utilities that power all x402 integrations and includes additional blockchain network configs for processing x402 payments using the [1Shot API](https://1shotapi.com) facilitator.
 
 ## Installation
 
 ```bash
-npm install x402
+npm install @1shotapi/x402
 ```
 
 ## Overview
@@ -43,6 +43,7 @@ For a complete example implementation, see our [advanced server example](https:/
 If you're not using our `x402-fetch` or `x402-axios` packages, you can manually integrate the x402 protocol in your client application. Here's how:
 
 1. Make a request to a x402-protected endpoint. The server will respond with a 402 status code and a JSON object containing:
+
    - `x402Version`: The version of the x402 protocol being used
    - `accepts`: An array of payment requirements you can fulfill
 
@@ -55,6 +56,6 @@ If you're not using our `x402-fetch` or `x402-axios` packages, you can manually 
    - The `Access-Control-Expose-Headers` field set to `"X-PAYMENT-RESPONSE"` to receive the server's transaction response
 
 For implementation examples, we recommend reviewing our official client packages:
+
 - [x402-fetch implementation](https://github.com/coinbase/x402/blob/main/typescript/packages/x402-fetch/src/index.ts)
 - [x402-axios implementation](https://github.com/coinbase/x402/blob/main/typescript/packages/x402-axios/src/index.ts)
-
