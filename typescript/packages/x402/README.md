@@ -4,8 +4,20 @@ This is forked version of the core TypeScript implementation of the x402 Payment
 
 ## Installation
 
+Install the `@1shotapi/x402` package to symlink in place of the `x402` package:
+
 ```bash
-npm install @1shotapi/x402
+pnpm add x402@npm:@1shotapi/x402
+```
+
+In your `package.json`, add an override so that cononical packages like `x402-express` will resolve to the `@1shotapi/x402` implementation which has additional networks compatible with the 1Shot API facilitator.
+
+```json
+"pnpm": {
+    "overrides": {
+      "x402": "@1shotapi/x402@^0.1.1"
+    }
+}
 ```
 
 ## Overview
